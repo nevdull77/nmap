@@ -6,6 +6,7 @@ local shortport = require "shortport"
 local stdnse = require "stdnse"
 local string = require "string"
 local url = require "url"
+local testlib = require "testlib"
 
 description = [[
 Shows the title of the default page of a web server.
@@ -38,7 +39,75 @@ categories = {"default", "discovery", "safe"}
 
 portrule = shortport.http
 
+Test = {
+	
+	new = function(self)
+		local o = {
+			inqueue = {},
+		}
+		setmetatable(o, self)
+		self.__index = self
+		return o
+	end,
+	
+	next_recv = function(self)
+		inqueue = self.inqueue
+		return function()
+			return table.remove(inqueue, 1)
+		end
+	end,
+	
+	next_send = function(self)
+		local outqueue = self.inqueue
+		return function(data)
+			if ( data:match("GET / HTTP") ) then
+				local testcase = tonumber(self.testcase)
+				if ( testcase == 1 ) then
+					table.insert(outqueue, [[HTTP/1.1 200 OK
+Date: Sat, 13 Oct 2012 19:02:41 GMT
+Expires: -1
+Cache-Control: private, max-age=0
+Content-Type: text/html; charset=UTF-8
+Connection: close
+
+<html>
+<body>
+<title>Test</TiTle>
+</body>
+</html>
+]])
+				elseif( testcase == 2 ) then
+					table.insert(outqueue, ([[HTTP/1.1 301 Moved Permanently
+Location: http://%s/
+Content-Type: text/html
+Content-Length: 174
+
+<html>
+<head>
+<title>Moved</title>
+</head>
+<body>
+<h1>Moved</h1>
+<p>This page has moved to <a href="http://%s/">http://%s/</a>.</p>
+</body>
+</html>
+]]):format(self.host.ip, self.host.ip, self.host.ip))
+				else
+					table.insert(outqueue, "HTTP/1.1 404 Not Found\n\n")
+				end
+
+			end
+		end
+	end,
+	
+}
+
 action = function(host, port)
+
+	if ( stdnse.get_script_args("test") ) then
+		testlib.Test:new(Test)
+	end
+
   local resp, redirect_url, title
 
   resp = http.get( host, port, '/' )
